@@ -99,14 +99,16 @@ When error occured in connectiion, isius return 500 Internal Server Error and co
 
 ## HTTP
 
-`/{http_scheme:check_https?}/{method:(?:GET|HEAD|get|head)}/{ip}/{port:[0-9]+}/{expected_status:[0-9][0-9][0-9]}` or 
-`/{http_scheme:check_https?}/{method:(?:GET|HEAD|get|head)}/{ip}/{port:[0-9]+}/{expected_status:[0-9][0-9][0-9]}/{host}` or
-`/{http_scheme:check_https?}/{method:(?:GET|HEAD|get|head)}/{ip}/{port:[0-9]+}/{expected_status:[0-9][0-9][0-9]}/{host}/{path:.*}`
+`/{http_scheme:check_https?}/{method:(?:GET|HEAD|get|head)}/{port:[0-9]+}/{expected_status:[0-9][0-9][0-9]}` 
+
+`/{http_scheme:check_https?}/{method:(?:GET|HEAD|get|head)}/{port:[0-9]+}/{expected_status:[0-9][0-9][0-9]}/{host}`
+
+`/{http_scheme:check_https?}/{method:(?:GET|HEAD|get|head)}/{port:[0-9]+}/{expected_status:[0-9][0-9][0-9]}/{host}/{path:.*}`
 
 If vhost is not required, give host `-`.
 
 ```
-% curl -v localhost:3000/check_http/get/34.231.30.52/80/200/httpbin.org/ 
+% curl -v localhost:3000/check_http/get/80/200/httpbin.org/ 
 *   Trying ::1...
 * TCP_NODELAY set
 * Connected to localhost (::1) port 3000 (#0)
@@ -126,7 +128,7 @@ If vhost is not required, give host `-`.
 ```
 
 ```
-% curl -v -H 'X-Timeout: 5' localhost:3000/check_https/get/34.231.30.52/443/200/httpbin.org/delay/8
+% curl -v -H 'X-Timeout: 5' localhost:3000/check_https/get/200/httpbin.org/delay/8
 *   Trying ::1...
 * TCP_NODELAY set
 * Connected to localhost (::1) port 3000 (#0)

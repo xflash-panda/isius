@@ -20,14 +20,14 @@ func handleCheckPing(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("X-Timeout") != "" {
 		i, err := strconv.ParseInt(r.Header.Get("X-Timeout"), 10, 64)
 		if err != nil {
-			userErrorJSON(w, fmt.Errorf("Could not parse X-Timeout: %v", err))
+			userErrorJSON(w, fmt.Errorf("could not parse X-Timeout: %v", err))
 			return
 		}
 		mainTimeout = time.Second * time.Duration(i)
 	}
 
 	if vars["ip"] == "" {
-		userErrorJSON(w, fmt.Errorf("No IP Address Specified"))
+		userErrorJSON(w, fmt.Errorf("no IP Address Specified"))
 		return
 	}
 	count := 1
@@ -35,7 +35,7 @@ func handleCheckPing(w http.ResponseWriter, r *http.Request) {
 		var err error
 		count, err = strconv.Atoi(vars["count"])
 		if err != nil {
-			userErrorJSON(w, fmt.Errorf("Could not parse count: %v", err))
+			userErrorJSON(w, fmt.Errorf("could not parse count: %v", err))
 			return
 		}
 	}
@@ -44,7 +44,7 @@ func handleCheckPing(w http.ResponseWriter, r *http.Request) {
 		var err error
 		i, err := strconv.ParseInt(vars["interval"], 10, 64)
 		if err != nil {
-			userErrorJSON(w, fmt.Errorf("Could not parse interval: %v", err))
+			userErrorJSON(w, fmt.Errorf("could not parse interval: %v", err))
 			return
 		}
 		interval = time.Millisecond * time.Duration(i)
@@ -55,7 +55,7 @@ func handleCheckPing(w http.ResponseWriter, r *http.Request) {
 		var err error
 		i, err := strconv.ParseInt(vars["timeout"], 10, 64)
 		if err != nil {
-			userErrorJSON(w, fmt.Errorf("Could not parse timeout: %v", err))
+			userErrorJSON(w, fmt.Errorf("could not parse timeout: %v", err))
 			return
 		}
 		timeout = time.Millisecond * time.Duration(i)
@@ -63,20 +63,20 @@ func handleCheckPing(w http.ResponseWriter, r *http.Request) {
 
 	ip, err := parseIP(vars["ip"])
 	if err != nil {
-		userErrorJSON(w, fmt.Errorf("Could not parse IP: %v", err))
+		userErrorJSON(w, fmt.Errorf("could not parse IP: %v", err))
 		return
 	}
 	var pinger *ping.Pinger
 	if strings.Index(ip.String(), ":") != -1 {
 		pinger, err = ping.New("", "::")
 		if err != nil {
-			outJSON(w, CRITICAL, "", fmt.Errorf("Could not create pinger: %v", err))
+			outJSON(w, CRITICAL, "", fmt.Errorf("could not create pinger: %v", err))
 			return
 		}
 	} else {
 		pinger, err = ping.New("0.0.0.0", "")
 		if err != nil {
-			outJSON(w, CRITICAL, "", fmt.Errorf("Could not create pinger: %v", err))
+			outJSON(w, CRITICAL, "", fmt.Errorf("could not create pinger: %v", err))
 			return
 		}
 	}
@@ -115,7 +115,7 @@ func handleCheckPing(w http.ResponseWriter, r *http.Request) {
 		// done all
 	case <-ctx.Done():
 		// closed by client
-		errors = append(errors, fmt.Errorf("Reached timeout: %v", ctx.Err()))
+		errors = append(errors, fmt.Errorf("reached timeout: %v", ctx.Err()))
 	}
 
 	sort.Sort(rtts)

@@ -1,4 +1,4 @@
-VERSION=0.0.5
+VERSION=0.0.6
 LDFLAGS=-ldflags "-w -s -X main.version=${VERSION} "
 
 all: isius
@@ -21,3 +21,6 @@ tag:
 	git tag v${VERSION}
 	git push origin v${VERSION}
 	git push origin main
+
+clean:
+	rm -f isius

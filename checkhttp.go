@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"strconv"
@@ -16,18 +15,12 @@ import (
 	"github.com/gorilla/mux"
 )
 
-func makeTransport(ip *net.IPAddr, port int, vhost string, timeout time.Duration) http.RoundTripper {
+func makeTransport(vhost string, timeout time.Duration) http.RoundTripper {
 	baseDialFunc := (&net.Dialer{
 		Timeout: timeout,
 	}).DialContext
-	network := "tcp4"
-	if strings.Index(ip.String(), ":") != -1 {
-		network = "tcp6"
-	}
-	dialFunc := func(ctx context.Context, _, _ string) (net.Conn, error) {
-		address := net.JoinHostPort(ip.String(), fmt.Sprintf("%d", port))
-		return baseDialFunc(ctx, network, address)
-	}
+
+	dialFunc := baseDialFunc
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true,
 	}
@@ -64,52 +57,39 @@ func makeHTTPCheckHandler(defaultUA string) func(w http.ResponseWriter, r *http.
 		if r.Header.Get("X-Timeout") != "" {
 			i, err := strconv.ParseInt(r.Header.Get("X-Timeout"), 10, 64)
 			if err != nil {
-				userErrorJSON(w, fmt.Errorf("Could not parse X-Timeout: %v", err))
+				userErrorJSON(w, fmt.Errorf("could not parse X-Timeout: %v", err))
 				return
 			}
 			mainTimeout = time.Second * time.Duration(i)
 		}
 
-		if vars["ip"] == "" {
-			userErrorJSON(w, fmt.Errorf("No IP Address Specified"))
-			return
-		}
 		if vars["port"] == "" {
-			userErrorJSON(w, fmt.Errorf("No Port number Specified"))
+			userErrorJSON(w, fmt.Errorf("no Port number Specified"))
 			return
 		}
 		port, err := strconv.Atoi(vars["port"])
 		if err != nil {
-			userErrorJSON(w, fmt.Errorf("Could not parse port number: %v", err))
-			return
-		}
-
-		ip, err := parseIP(vars["ip"])
-		if err != nil {
-			userErrorJSON(w, fmt.Errorf("Could not parse IP: %v", err))
+			userErrorJSON(w, fmt.Errorf("could not parse port number: %v", err))
 			return
 		}
 
 		if vars["status"] == "" {
-			userErrorJSON(w, fmt.Errorf("No Status code Specified"))
+			userErrorJSON(w, fmt.Errorf("no Status code Specified"))
 			return
 		}
 		expectedStatus, err := strconv.Atoi(vars["status"])
 		if err != nil {
-			userErrorJSON(w, fmt.Errorf("Could not parse status number: %v", err))
+			userErrorJSON(w, fmt.Errorf("could not parse status number: %v", err))
 			return
 		}
 
 		if vars["method"] == "" {
-			userErrorJSON(w, fmt.Errorf("No HTTP method code Specified"))
+			userErrorJSON(w, fmt.Errorf("no HTTP method code Specified"))
 			return
 		}
 		method := strings.ToUpper(vars["method"])
 
 		vhost := vars["host"]
-		if vhost == "-" {
-			vhost = ip.String()
-		}
 		host := net.JoinHostPort(vhost, fmt.Sprintf("%d", port))
 		path := vars["path"]
 		path = "/" + path
@@ -123,6 +103,7 @@ func makeHTTPCheckHandler(defaultUA string) func(w http.ResponseWriter, r *http.
 			uri += "?" + r.URL.RawQuery
 		}
 
+		println(uri)
 		ctx, cancel := context.WithTimeout(r.Context(), mainTimeout)
 		defer cancel()
 
@@ -134,7 +115,7 @@ func makeHTTPCheckHandler(defaultUA string) func(w http.ResponseWriter, r *http.
 			&b,
 		)
 		if err != nil {
-			userErrorJSON(w, fmt.Errorf("Failed create request: %v", err))
+			userErrorJSON(w, fmt.Errorf("failed create request: %v", err))
 			return
 		}
 		ua := r.UserAgent()
@@ -143,7 +124,7 @@ func makeHTTPCheckHandler(defaultUA string) func(w http.ResponseWriter, r *http.
 		}
 		req.Header.Set("User-Agent", ua)
 
-		transport := makeTransport(ip, port, vars["host"], mainTimeout)
+		transport := makeTransport(vars["host"], mainTimeout)
 		client := &http.Client{
 			Transport: transport,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -160,7 +141,7 @@ func makeHTTPCheckHandler(defaultUA string) func(w http.ResponseWriter, r *http.
 		}
 
 		defer res.Body.Close()
-		_, err = io.Copy(ioutil.Discard, res.Body)
+		_, err = io.Copy(io.Discard, res.Body)
 		if res.StatusCode != expectedStatus {
 			outJSON(w, CRITICAL, fmt.Sprintf("duration:%f", duration.Seconds()), fmt.Errorf("status code %d not match %d", res.StatusCode, expectedStatus))
 			return

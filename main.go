@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -152,9 +153,9 @@ func _main() int {
 
 	m.Handle(mount+"/check_tcp/{ip}/{port:[0-9]+}", http.HandlerFunc(handleCheckTCP))
 
-	m.Handle(mount+"/{http_scheme:check_https?}/{method:(?:GET|HEAD|get|head)}/{ip}/{port:[0-9]+}/{status:[0-9][0-9][0-9]}", http.HandlerFunc(handleHTTPCheck))
-	m.Handle(mount+"/{http_scheme:check_https?}/{method:(?:GET|HEAD|get|head)}/{ip}/{port:[0-9]+}/{status:[0-9][0-9][0-9]}/{host}", http.HandlerFunc(handleHTTPCheck))
-	m.Handle(mount+"/{http_scheme:check_https?}/{method:(?:GET|HEAD|get|head)}/{ip}/{port:[0-9]+}/{status:[0-9][0-9][0-9]}/{host}/{path:.*}", http.HandlerFunc(handleHTTPCheck))
+	m.Handle(mount+"/{http_scheme:check_https?}/{method:(?:GET|HEAD|get|head)}/{port:[0-9]+}/{status:[0-9][0-9][0-9]}", http.HandlerFunc(handleHTTPCheck))
+	m.Handle(mount+"/{http_scheme:check_https?}/{method:(?:GET|HEAD|get|head)}/{port:[0-9]+}/{status:[0-9][0-9][0-9]}/{host}", http.HandlerFunc(handleHTTPCheck))
+	m.Handle(mount+"/{http_scheme:check_https?}/{method:(?:GET|HEAD|get|head)}/{port:[0-9]+}/{status:[0-9][0-9][0-9]}/{host}/{path:.*}", http.HandlerFunc(handleHTTPCheck))
 
 	al, err := accesslog.New(opts.LogDir, opts.LogRotate, opts.LogRotateTime)
 	if err != nil {
@@ -184,7 +185,7 @@ func _main() int {
 
 	var l net.Listener
 	listens, err := listener.ListenAll()
-	if err != nil && err != listener.ErrNoListeningTarget {
+	if err != nil && !errors.Is(err, listener.ErrNoListeningTarget) {
 		log.Printf("Failed to initialize listener:%v", err)
 		return UNKNOWN
 	}
@@ -200,7 +201,7 @@ func _main() int {
 		l = listens[0]
 	}
 
-	if err := server.Serve(l); err != http.ErrServerClosed {
+	if err := server.Serve(l); !errors.Is(err, http.ErrServerClosed) {
 		log.Printf("Error in server.Serve: %v", err)
 		return CRITICAL
 	}

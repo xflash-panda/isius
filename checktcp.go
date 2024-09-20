@@ -19,29 +19,29 @@ func handleCheckTCP(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("X-Timeout") != "" {
 		i, err := strconv.ParseInt(r.Header.Get("X-Timeout"), 10, 64)
 		if err != nil {
-			userErrorJSON(w, fmt.Errorf("Could not parse X-Timeout: %v", err))
+			userErrorJSON(w, fmt.Errorf("could not parse X-Timeout: %v", err))
 			return
 		}
 		mainTimeout = time.Second * time.Duration(i)
 	}
 
 	if vars["ip"] == "" {
-		userErrorJSON(w, fmt.Errorf("No IP Address Specified"))
+		userErrorJSON(w, fmt.Errorf("no IP Address Specified"))
 		return
 	}
 	if vars["port"] == "" {
-		userErrorJSON(w, fmt.Errorf("No Port number Specified"))
+		userErrorJSON(w, fmt.Errorf("no Port number Specified"))
 		return
 	}
 	port, err := strconv.Atoi(vars["port"])
 	if err != nil {
-		userErrorJSON(w, fmt.Errorf("Could not parse port number: %v", err))
+		userErrorJSON(w, fmt.Errorf("could not parse port number: %v", err))
 		return
 	}
 
 	ip, err := parseIP(vars["ip"])
 	if err != nil {
-		userErrorJSON(w, fmt.Errorf("Could not parse IP: %v", err))
+		userErrorJSON(w, fmt.Errorf("could not parse IP: %v", err))
 		return
 	}
 
