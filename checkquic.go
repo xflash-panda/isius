@@ -118,6 +118,18 @@ func probeQUIC(ctx context.Context, dialer udpDialer, addr *net.UDPAddr) quicPro
 			return result
 		}
 		result.errs = append(result.errs, err)
+		// Inter-attempt gap: not applied after a successful attempt
+		// (we already returned above) and not after the last attempt
+		// (no point sleeping when there is nothing more to do).
+		if attempt < quicProbeAttempts {
+			select {
+			case <-ctx.Done():
+				result.attempts = attempt
+				result.errs = append(result.errs, ctx.Err())
+				return result
+			case <-time.After(quicProbeAttemptGap):
+			}
+		}
 	}
 	result.attempts = quicProbeAttempts
 	return result

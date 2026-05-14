@@ -143,3 +143,52 @@ func TestProbeQUICContextAlreadyCancelledBeforeFirstAttempt(t *testing.T) {
 		t.Fatalf("expected Canceled, got %v", result.errs[0])
 	}
 }
+
+func TestProbeQUICAttemptGapHonored(t *testing.T) {
+	dialer := &multiAttemptFakeDialer{conns: []*fakeUDPConn{
+		newGarbageConn(), newGarbageConn(), newGarbageConn(),
+	}}
+	addr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 4430}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	_ = probeQUIC(ctx, dialer, addr)
+	elapsed := time.Since(start)
+
+	// Three attempts means two inter-attempt gaps. The fake conn returns
+	// instantly so attempt time itself is negligible — the floor is just
+	// 2 * gap.
+	minExpected := 2 * quicProbeAttemptGap
+	if elapsed < minExpected {
+		t.Fatalf("expected elapsed >= %v (2 gaps), got %v", minExpected, elapsed)
+	}
+}
+
+func TestProbeQUICShortCircuitsOnFirstSuccess(t *testing.T) {
+	// Echo on first attempt; even though c2/c3 are also configured, they
+	// must not be dialed and no gap should be applied.
+	dialer := &multiAttemptFakeDialer{conns: []*fakeUDPConn{
+		newEchoConn(), newGarbageConn(), newGarbageConn(),
+	}}
+	addr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 4430}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	result := probeQUIC(ctx, dialer, addr)
+	elapsed := time.Since(start)
+
+	if result.successes != 1 {
+		t.Fatalf("expected success on first attempt, got %d successes (errs=%v)", result.successes, result.errs)
+	}
+	if result.attempts != 1 {
+		t.Fatalf("expected 1 attempt, got %d", result.attempts)
+	}
+	// Without any gap, this should be much faster than even one gap.
+	if elapsed >= quicProbeAttemptGap {
+		t.Fatalf("expected elapsed < %v (no gap on first success), got %v", quicProbeAttemptGap, elapsed)
+	}
+}
