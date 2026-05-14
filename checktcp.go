@@ -12,6 +12,13 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// newTCPDialer builds the dialer used for TCP reachability probes. Keep
+// dialer.Timeout in sync with the per-request mainTimeout so X-Timeout
+// values larger than monTimeout are honored.
+func newTCPDialer(mainTimeout time.Duration) *net.Dialer {
+	return &net.Dialer{Timeout: mainTimeout}
+}
+
 func handleCheckTCP(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 
@@ -47,14 +54,12 @@ func handleCheckTCP(w http.ResponseWriter, r *http.Request) {
 
 	host := net.JoinHostPort(ip.String(), fmt.Sprintf("%d", port))
 	network := "tcp4"
-	dialer := net.Dialer{
-		Timeout: monTimeout,
-	}
 	if strings.Contains(ip.String(), ":") {
 		network = "tcp6"
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), mainTimeout)
 	defer cancel()
+	dialer := newTCPDialer(mainTimeout)
 	start := time.Now()
 	conn, err := dialer.DialContext(ctx, network, host)
 	duration := time.Since(start)
