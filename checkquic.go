@@ -86,12 +86,35 @@ func (realUDPDialer) DialUDP(network string, laddr, raddr *net.UDPAddr) (udpConn
 	return net.DialUDP(network, laddr, raddr)
 }
 
-// probeQUIC sends a VN-trigger packet to addr and waits for a valid
-// Version Negotiation response. Returns the round-trip time on success.
-// The probe deadline is taken from ctx.Deadline() if set; ctx cancellation
-// causes probeQUIC to close the conn and return promptly without leaving
-// a goroutine that touches the conn after return.
-func probeQUIC(ctx context.Context, dialer udpDialer, addr *net.UDPAddr) (time.Duration, error) {
+// quicProbeResult collects the outcome of one probeQUIC call, which may
+// run up to quicProbeAttempts internal attempts. successes is 0 or 1
+// (any single success short-circuits). attempts is how many attempts
+// were actually made. rtt is the RTT of the successful attempt (zero
+// when successes == 0). errs holds the per-attempt errors when an
+// attempt failed; on full failure len(errs) == attempts.
+type quicProbeResult struct {
+	successes int
+	attempts  int
+	rtt       time.Duration
+	errs      []error
+}
+
+// probeQUIC performs one external probe of addr. Internally it may run
+// up to quicProbeAttempts VN-trigger attempts and short-circuits on the
+// first valid Version Negotiation response.
+func probeQUIC(ctx context.Context, dialer udpDialer, addr *net.UDPAddr) quicProbeResult {
+	rtt, err := probeQUICAttempt(ctx, dialer, addr)
+	if err != nil {
+		return quicProbeResult{successes: 0, attempts: 1, errs: []error{err}}
+	}
+	return quicProbeResult{successes: 1, attempts: 1, rtt: rtt}
+}
+
+// probeQUICAttempt performs exactly one VN-trigger send/recv cycle.
+// Returns the wire RTT on success, or an error describing the failure.
+// The function honors ctx for cancellation and ctx.Deadline (if set)
+// for the socket deadline.
+func probeQUICAttempt(ctx context.Context, dialer udpDialer, addr *net.UDPAddr) (time.Duration, error) {
 	network := "udp4"
 	if addr.IP.To4() == nil {
 		network = "udp6"
@@ -191,12 +214,15 @@ func handleCheckQUIC(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	start := time.Now()
-	_, err = probeQUIC(ctx, realUDPDialer{}, udpAddr)
+	result := probeQUIC(ctx, realUDPDialer{}, udpAddr)
 	duration := time.Since(start)
 
-	if err != nil {
-		outJSON(w, CRITICAL, fmt.Sprintf("duration:%f", duration.Seconds()), err)
+	metric := fmt.Sprintf("success:%d,attempts:%d,duration:%f",
+		result.successes, result.attempts, duration.Seconds())
+
+	if result.successes == 0 {
+		outJSON(w, CRITICAL, metric, result.errs...)
 		return
 	}
-	outJSON(w, OK, fmt.Sprintf("duration:%f", duration.Seconds()))
+	outJSON(w, OK, metric)
 }

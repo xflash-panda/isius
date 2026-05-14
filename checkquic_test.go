@@ -207,12 +207,12 @@ func TestProbeQUICSuccess(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	rtt, err := probeQUIC(ctx, dialer, addr)
-	if err != nil {
-		t.Fatalf("expected success, got %v", err)
+	result := probeQUIC(ctx, dialer, addr)
+	if result.successes != 1 {
+		t.Fatalf("expected 1 success, got %d (errs=%v)", result.successes, result.errs)
 	}
-	if rtt <= 0 {
-		t.Fatalf("expected rtt > 0, got %v", rtt)
+	if result.rtt <= 0 {
+		t.Fatalf("expected rtt > 0, got %v", result.rtt)
 	}
 }
 
@@ -226,12 +226,16 @@ func TestProbeQUICInvalidResponse(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	_, err := probeQUIC(ctx, dialer, addr)
-	if err == nil {
-		t.Fatal("expected error for invalid response")
+	result := probeQUIC(ctx, dialer, addr)
+	if result.successes != 0 {
+		t.Fatalf("expected 0 successes, got %d", result.successes)
 	}
-	if !strings.Contains(err.Error(), "invalid") {
-		t.Fatalf("expected error to mention 'invalid', got %v", err)
+	if len(result.errs) == 0 {
+		t.Fatal("expected at least one error")
+	}
+	last := result.errs[len(result.errs)-1]
+	if !strings.Contains(last.Error(), "invalid") {
+		t.Fatalf("expected last error to mention 'invalid', got %v", last)
 	}
 }
 
@@ -244,14 +248,18 @@ func TestProbeQUICTimeout(t *testing.T) {
 	defer cancel()
 
 	start := time.Now()
-	_, err := probeQUIC(ctx, dialer, addr)
+	result := probeQUIC(ctx, dialer, addr)
 	elapsed := time.Since(start)
 
-	if err == nil {
-		t.Fatal("expected error on timeout")
+	if result.successes != 0 {
+		t.Fatal("expected 0 successes on timeout")
 	}
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("expected DeadlineExceeded, got %v", err)
+	if len(result.errs) == 0 {
+		t.Fatal("expected at least one error")
+	}
+	last := result.errs[len(result.errs)-1]
+	if !errors.Is(last, context.DeadlineExceeded) {
+		t.Fatalf("expected last err DeadlineExceeded, got %v", last)
 	}
 	if elapsed > 200*time.Millisecond {
 		t.Fatalf("probeQUIC did not honor deadline: elapsed %v", elapsed)
@@ -269,19 +277,25 @@ func TestProbeQUICCancelOnContextDone(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	done := make(chan error, 1)
+	done := make(chan quicProbeResult, 1)
 	go func() {
-		_, err := probeQUIC(ctx, dialer, addr)
-		done <- err
+		done <- probeQUIC(ctx, dialer, addr)
 	}()
 
 	time.Sleep(20 * time.Millisecond)
 	cancel()
 
 	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("expected context.Canceled, got %v", err)
+	case result := <-done:
+		if result.successes != 0 {
+			t.Fatal("expected 0 successes after cancel")
+		}
+		if len(result.errs) == 0 {
+			t.Fatal("expected at least one error")
+		}
+		last := result.errs[len(result.errs)-1]
+		if !errors.Is(last, context.Canceled) {
+			t.Fatalf("expected last err Canceled, got %v", last)
 		}
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("probeQUIC did not return promptly after ctx cancellation")
