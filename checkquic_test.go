@@ -234,3 +234,26 @@ func TestProbeQUICInvalidResponse(t *testing.T) {
 		t.Fatalf("expected error to mention 'invalid', got %v", err)
 	}
 }
+
+func TestProbeQUICTimeout(t *testing.T) {
+	fc := &fakeUDPConn{readBlock: make(chan struct{})}
+	dialer := &fakeUDPDialer{conn: fc}
+	addr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 4430}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := probeQUIC(ctx, dialer, addr)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error on timeout")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected DeadlineExceeded, got %v", err)
+	}
+	if elapsed > 200*time.Millisecond {
+		t.Fatalf("probeQUIC did not honor deadline: elapsed %v", elapsed)
+	}
+}
