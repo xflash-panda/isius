@@ -7,7 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"strconv"
 	"time"
+
+	"github.com/gorilla/mux"
 )
 
 const (
@@ -82,9 +86,6 @@ func (realUDPDialer) DialUDP(network string, laddr, raddr *net.UDPAddr) (udpConn
 	return net.DialUDP(network, laddr, raddr)
 }
 
-// Compile-time assertion: realUDPDialer must satisfy udpDialer.
-var _ udpDialer = realUDPDialer{}
-
 // probeQUIC sends a VN-trigger packet to addr and waits for a valid
 // Version Negotiation response. Returns the round-trip time on success.
 // The probe deadline is taken from ctx.Deadline() if set; ctx cancellation
@@ -149,4 +150,53 @@ func probeQUIC(ctx context.Context, dialer udpDialer, addr *net.UDPAddr) (time.D
 		}
 		return rtt, nil
 	}
+}
+
+func handleCheckQUIC(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+
+	mainTimeout := quicTimeout
+	if r.Header.Get("X-Timeout") != "" {
+		i, err := strconv.ParseInt(r.Header.Get("X-Timeout"), 10, 64)
+		if err != nil {
+			userErrorJSON(w, fmt.Errorf("could not parse X-Timeout: %v", err))
+			return
+		}
+		mainTimeout = time.Second * time.Duration(i)
+	}
+
+	if vars["ip"] == "" {
+		userErrorJSON(w, fmt.Errorf("no IP Address Specified"))
+		return
+	}
+	if vars["port"] == "" {
+		userErrorJSON(w, fmt.Errorf("no Port number Specified"))
+		return
+	}
+	port, err := strconv.Atoi(vars["port"])
+	if err != nil {
+		userErrorJSON(w, fmt.Errorf("could not parse port number: %v", err))
+		return
+	}
+
+	ip, err := parseIP(vars["ip"])
+	if err != nil {
+		userErrorJSON(w, fmt.Errorf("could not parse IP: %v", err))
+		return
+	}
+
+	udpAddr := &net.UDPAddr{IP: ip.IP, Port: port}
+
+	ctx, cancel := context.WithTimeout(r.Context(), mainTimeout)
+	defer cancel()
+
+	start := time.Now()
+	_, err = probeQUIC(ctx, realUDPDialer{}, udpAddr)
+	duration := time.Since(start)
+
+	if err != nil {
+		outJSON(w, CRITICAL, fmt.Sprintf("duration:%f", duration.Seconds()), err)
+		return
+	}
+	outJSON(w, OK, fmt.Sprintf("duration:%f", duration.Seconds()))
 }

@@ -29,6 +29,7 @@ const OK = 0
 const pingTimeout = 1 * time.Second
 const pingInterval = 10 * time.Millisecond
 const monTimeout = 300 * time.Second
+const quicTimeout = 3 * time.Second
 
 var version string
 
@@ -152,6 +153,7 @@ func _main() int {
 	m.Handle(mount+"/check_ping/{count:[0-9]+}/{interval:[0-9]+}/{timeout:[0-9]+}/{ip}", http.HandlerFunc(handleCheckPing))
 
 	m.Handle(mount+"/check_tcp/{ip}/{port:[0-9]+}", http.HandlerFunc(handleCheckTCP))
+	m.Handle(mount+"/check_quic/{ip}/{port:[0-9]+}", http.HandlerFunc(handleCheckQUIC))
 
 	m.Handle(mount+"/{http_scheme:check_https?}/{method:(?:GET|HEAD|get|head)}/{port:[0-9]+}/{status:[0-9][0-9][0-9]}", http.HandlerFunc(handleHTTPCheck))
 	m.Handle(mount+"/{http_scheme:check_https?}/{method:(?:GET|HEAD|get|head)}/{port:[0-9]+}/{status:[0-9][0-9][0-9]}/{host}", http.HandlerFunc(handleHTTPCheck))
