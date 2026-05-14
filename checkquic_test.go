@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -212,5 +213,24 @@ func TestProbeQUICSuccess(t *testing.T) {
 	}
 	if rtt <= 0 {
 		t.Fatalf("expected rtt > 0, got %v", rtt)
+	}
+}
+
+func TestProbeQUICInvalidResponse(t *testing.T) {
+	fc := &fakeUDPConn{onRead: func([]byte) ([]byte, error) {
+		return []byte{0x00, 0x01, 0x02, 0x03}, nil
+	}}
+	dialer := &fakeUDPDialer{conn: fc}
+	addr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 4430}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err := probeQUIC(ctx, dialer, addr)
+	if err == nil {
+		t.Fatal("expected error for invalid response")
+	}
+	if !strings.Contains(err.Error(), "invalid") {
+		t.Fatalf("expected error to mention 'invalid', got %v", err)
 	}
 }
