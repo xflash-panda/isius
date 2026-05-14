@@ -257,3 +257,39 @@ func TestProbeQUICTimeout(t *testing.T) {
 		t.Fatalf("probeQUIC did not honor deadline: elapsed %v", elapsed)
 	}
 }
+
+// TestProbeQUICCancelOnContextDone proves probeQUIC must return promptly
+// when its ctx is cancelled mid-Read, and must not leave a goroutine that
+// uses the conn after probeQUIC has returned. Mirrors the discipline
+// pinned by TestProbePingNoCallAfterReturn for the ping path.
+func TestProbeQUICCancelOnContextDone(t *testing.T) {
+	fc := &fakeUDPConn{readBlock: make(chan struct{})}
+	dialer := &fakeUDPDialer{conn: fc}
+	addr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 4430}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := probeQUIC(ctx, dialer, addr)
+		done <- err
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context.Canceled, got %v", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("probeQUIC did not return promptly after ctx cancellation")
+	}
+
+	// fc.closeCalled must be true — probeQUIC's defer Close OR its
+	// ctx.Done() branch must have closed the conn before returning.
+	if !fc.closeCalled.Load() {
+		t.Fatal("fake conn was not closed by probeQUIC")
+	}
+}
