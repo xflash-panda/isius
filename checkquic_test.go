@@ -103,3 +103,11 @@ func TestValidateVNResponseDCIDMismatch(t *testing.T) {
 		t.Fatal("expected error for DCID mismatch")
 	}
 }
+
+func TestValidateVNResponseTruncatedDCID(t *testing.T) {
+	// dcidLen=4 claims 4 bytes of DCID, but only 1 byte follows.
+	pkt := []byte{0xc0, 0x00, 0x00, 0x00, 0x00, 0x04, 0xaa}
+	if err := validateVNResponse(pkt, nil); err == nil {
+		t.Fatal("expected error for truncated DCID")
+	}
+}
