@@ -91,12 +91,45 @@ func (realUDPDialer) DialUDP(network string, laddr, raddr *net.UDPAddr) (udpConn
 // (any single success short-circuits). attempts is how many attempts
 // were actually made. rtt is the RTT of the successful attempt (zero
 // when successes == 0). errs holds the per-attempt errors when an
-// attempt failed; on full failure len(errs) == attempts.
+// attempt failed; on full failure len(errs) is attempts, or attempts+1
+// when the probe was interrupted during an inter-attempt gap (in which
+// case the trailing entry is ctx.Err()).
 type quicProbeResult struct {
 	successes int
 	attempts  int
 	rtt       time.Duration
 	errs      []error
+}
+
+// computeAttemptDeadline returns how long the current attempt may run.
+// It is the smaller of quicProbeAttemptDeadline and the parent ctx's
+// fair share of remaining time, where "fair share" allocates the
+// remaining wall clock budget equally across the attempts that have
+// not yet started, after subtracting the inter-attempt gaps that
+// would still be applied.
+//
+// If the parent ctx has no deadline, the constant cap is returned.
+// If the computed share is non-positive (parent ctx already past its
+// deadline), zero is returned and the caller should give up.
+func computeAttemptDeadline(parent context.Context, currentAttempt int) time.Duration {
+	if currentAttempt < 1 || currentAttempt > quicProbeAttempts {
+		return 0
+	}
+	remainingAttempts := quicProbeAttempts - currentAttempt + 1
+	d, ok := parent.Deadline()
+	if !ok {
+		return quicProbeAttemptDeadline
+	}
+	remainingGaps := time.Duration(remainingAttempts-1) * quicProbeAttemptGap
+	budget := time.Until(d) - remainingGaps
+	if budget <= 0 {
+		return 0
+	}
+	share := budget / time.Duration(remainingAttempts)
+	if share > quicProbeAttemptDeadline {
+		return quicProbeAttemptDeadline
+	}
+	return share
 }
 
 // probeQUIC performs one external probe of addr. Internally it may run
@@ -110,7 +143,15 @@ func probeQUIC(ctx context.Context, dialer udpDialer, addr *net.UDPAddr) quicPro
 			result.errs = append(result.errs, err)
 			return result
 		}
-		rtt, err := probeQUICAttempt(ctx, dialer, addr)
+		attemptDeadline := computeAttemptDeadline(ctx, attempt)
+		if attemptDeadline <= 0 {
+			result.attempts = attempt
+			result.errs = append(result.errs, context.DeadlineExceeded)
+			return result
+		}
+		attemptCtx, cancel := context.WithTimeout(ctx, attemptDeadline)
+		rtt, err := probeQUICAttempt(attemptCtx, dialer, addr)
+		cancel()
 		if err == nil {
 			result.successes = 1
 			result.attempts = attempt
@@ -118,9 +159,6 @@ func probeQUIC(ctx context.Context, dialer udpDialer, addr *net.UDPAddr) quicPro
 			return result
 		}
 		result.errs = append(result.errs, err)
-		// Inter-attempt gap: not applied after a successful attempt
-		// (we already returned above) and not after the last attempt
-		// (no point sleeping when there is nothing more to do).
 		if attempt < quicProbeAttempts {
 			select {
 			case <-ctx.Done():

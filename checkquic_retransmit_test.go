@@ -192,3 +192,51 @@ func TestProbeQUICShortCircuitsOnFirstSuccess(t *testing.T) {
 		t.Fatalf("expected elapsed < %v (no gap on first success), got %v", quicProbeAttemptGap, elapsed)
 	}
 }
+
+func TestProbeQUICAttemptDeadlineCappedAtConstantWhenLoose(t *testing.T) {
+	fc := newEchoConn()
+	dialer := &fakeUDPDialer{conn: fc}
+	addr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 4430}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	beforeProbe := time.Now()
+	_ = probeQUIC(ctx, dialer, addr)
+
+	// With a loose ctx (10s) the per-attempt deadline must be capped at
+	// quicProbeAttemptDeadline (800ms). The fake conn captures the most
+	// recent SetDeadline call.
+	deadlineSet := fc.deadline
+	delta := deadlineSet.Sub(beforeProbe)
+	if delta > quicProbeAttemptDeadline+50*time.Millisecond {
+		t.Fatalf("expected per-attempt deadline ~%v, got %v from probe start", quicProbeAttemptDeadline, delta)
+	}
+	if delta < quicProbeAttemptDeadline-50*time.Millisecond {
+		t.Fatalf("expected per-attempt deadline ~%v, got %v from probe start", quicProbeAttemptDeadline, delta)
+	}
+}
+
+func TestProbeQUICAttemptDeadlineDerivedFromCtxWhenTight(t *testing.T) {
+	fc := newEchoConn()
+	dialer := &fakeUDPDialer{conn: fc}
+	addr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 4430}
+
+	// 1s ctx budget. With 3 attempts and 2 gaps of 100ms each:
+	//   per-attempt = (1s - 200ms) / 3 = 266ms
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	beforeProbe := time.Now()
+	_ = probeQUIC(ctx, dialer, addr)
+
+	deadlineSet := fc.deadline
+	delta := deadlineSet.Sub(beforeProbe)
+	expected := (1*time.Second - 2*quicProbeAttemptGap) / time.Duration(quicProbeAttempts)
+	if delta > expected+50*time.Millisecond {
+		t.Fatalf("expected per-attempt deadline ~%v (derived from tight ctx), got %v", expected, delta)
+	}
+	if delta < expected-50*time.Millisecond {
+		t.Fatalf("expected per-attempt deadline ~%v (derived from tight ctx), got %v", expected, delta)
+	}
+}
