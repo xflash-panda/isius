@@ -150,5 +150,36 @@ If vhost is not required, give host `-`.
 
 When error occured in request or could not get expected status code , isius return 500 Internal Server Error and code with 2.
 
+## QUIC
+
+`/check_quic/{ip}/{port:[0-9]+}`
+
+Sends a single QUIC long-header packet with a *grease* version (RFC 9000 §15)
+and waits for the RFC 9000 §6 Version Negotiation response. No QUIC handshake,
+TLS, or SNI is performed, so any RFC-compliant QUIC server (HTTP/3, TUIC,
+Hysteria, Naive, ...) responds.
+
+Default `X-Timeout` is 3 seconds.
+
+```
+% curl -v -H 'X-Timeout: 3' localhost:3000/check_quic/cloudflare-quic.com/443
+> GET /check_quic/cloudflare-quic.com/443 HTTP/1.1
+> X-Timeout: 3
+>
+< HTTP/1.1 200 OK
+< Content-Length: 51
+< Content-Type: text/plain; charset=utf-8
+<
+{"code":0,"metric":"duration:0.180432","errors":[]}
+```
+
+When the VN response is received, isius returns 200 OK and code 0. Otherwise
+(timeout, invalid response, or network error), isius returns 500 and code 2.
+
+**Semantics — important.** This is a *reachability* probe, not a *blockability*
+probe. It catches the common GFW QUIC blocking patterns (wholesale UDP/443
+drop, IP/port blocklist, long-header DPI). It cannot detect handshake-content
+selective blocking (where a censor decrypts the Initial packet and drops
+based on SNI / ALPN / version=v1) or QoS / throttling.
 
 
