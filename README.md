@@ -154,12 +154,15 @@ When error occured in request or could not get expected status code , isius retu
 
 `/check_quic/{ip}/{port:[0-9]+}`
 
-Sends a single QUIC long-header packet with a *grease* version (RFC 9000 §15)
-and waits for the RFC 9000 §6 Version Negotiation response. No QUIC handshake,
+Sends up to 3 sequential QUIC long-header packets with a *grease* version
+(RFC 9000 §15) and waits for the RFC 9000 §6 Version Negotiation response.
+The probe short-circuits on the first valid VN response. No QUIC handshake,
 TLS, or SNI is performed, so any RFC-compliant QUIC server (HTTP/3, TUIC,
 Hysteria, Naive, ...) responds.
 
-Default `X-Timeout` is 3 seconds.
+Default `X-Timeout` is 3 seconds. Internal retry parameters are fixed:
+3 attempts, 800ms per-attempt deadline, 100ms inter-attempt gap. Per-attempt
+deadlines automatically shrink so the total stays within `X-Timeout`.
 
 ```
 % curl -v -H 'X-Timeout: 3' localhost:3000/check_quic/cloudflare-quic.com/443
@@ -167,19 +170,22 @@ Default `X-Timeout` is 3 seconds.
 > X-Timeout: 3
 >
 < HTTP/1.1 200 OK
-< Content-Length: 51
+< Content-Length: 64
 < Content-Type: text/plain; charset=utf-8
 <
-{"code":0,"metric":"duration:0.180432","errors":[]}
+{"code":0,"metric":"success:1,attempts:1,duration:0.180432","errors":[]}
 ```
 
-When the VN response is received, isius returns 200 OK and code 0. Otherwise
-(timeout, invalid response, or network error), isius returns 500 and code 2.
+When at least one VN response is received, isius returns 200 OK and code 0.
+The metric `success:M,attempts:N,duration:X.XXX` exposes how many of the
+attempts succeeded and how many ran. On full failure, isius returns 500 and
+code 2 with one error per failed attempt.
 
 **Semantics — important.** This is a *reachability* probe, not a *blockability*
-probe. It catches the common GFW QUIC blocking patterns (wholesale UDP/443
-drop, IP/port blocklist, long-header DPI). It cannot detect handshake-content
+probe. Internal retries reduce false negatives caused by UDP packet loss
+(empirically 50%+ on jittery proxy paths drops to <15%), but the probe still
+catches the common GFW QUIC blocking patterns (wholesale UDP/443 drop,
+IP/port blocklist, long-header DPI). It cannot detect handshake-content
 selective blocking (where a censor decrypts the Initial packet and drops
 based on SNI / ALPN / version=v1) or QoS / throttling.
-
 
