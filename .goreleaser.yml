@@ -1,0 +1,23 @@
+version: 2
+
+builds:
+  - binary: isius
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -w -s -X main.version={{.Version}}
+
+archives:
+  - formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+release:
+  github:
+    owner: xflash-panda
+    name: isius

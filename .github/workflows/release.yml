@@ -1,15 +1,12 @@
-name: test
+name: release
 on:
   push:
-    branches:
-      - dev
-      - master
-  pull_request:
-    branches:
-      - dev
-      - master
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+permissions:
+  contents: write
 jobs:
-  test:
+  goreleaser:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -22,10 +19,10 @@ jobs:
         with:
           go-version: "1.25"
 
-      - name: Lint
-        uses: golangci/golangci-lint-action@v6
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
         with:
           version: latest
-
-      - name: Test
-        run: make check
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
