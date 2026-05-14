@@ -181,7 +181,7 @@ func (d *fakeUDPDialer) DialUDP(_ string, _, _ *net.UDPAddr) (udpConn, error) {
 // echoVN extracts the SCID from a written VN-trigger packet and produces
 // a valid VN response that echoes it back as the response's DCID.
 func echoVN(written []byte) ([]byte, error) {
-	if len(written) < 23 {
+	if len(written) < 7+2*quicCIDLen {
 		return nil, errors.New("written packet too short to extract SCID")
 	}
 	dcidLen := int(written[5])

@@ -125,8 +125,11 @@ func buildVNTriggerPacket(dcid, scid []byte) []byte
 func validateVNResponse(packet, sentSCID []byte) error
 
 // IO: sends the packet, waits for a valid response, returns RTT.
+// The probe deadline comes from ctx.Deadline() (the handler wraps
+// r.Context() with WithTimeout, which makes a separate timeout param
+// redundant).
 func probeQUIC(ctx context.Context, dialer udpDialer,
-                addr *net.UDPAddr, timeout time.Duration) (time.Duration, error)
+                addr *net.UDPAddr) (time.Duration, error)
 
 // Interfaces for test injection.
 type udpDialer interface { ... }
