@@ -2,7 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
+	"net"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestBuildVNTriggerPacketLength(t *testing.T) {
@@ -34,20 +40,26 @@ func TestBuildVNTriggerPacketVersion(t *testing.T) {
 }
 
 func TestBuildVNTriggerPacketCIDs(t *testing.T) {
-	dcid := bytes.Repeat([]byte{0xaa}, 8)
-	scid := bytes.Repeat([]byte{0xbb}, 8)
+	dcid := bytes.Repeat([]byte{0xaa}, quicCIDLen)
+	scid := bytes.Repeat([]byte{0xbb}, quicCIDLen)
 	pkt := buildVNTriggerPacket(dcid, scid)
-	if pkt[5] != 8 {
-		t.Fatalf("DCID len = %d, want 8", pkt[5])
+
+	dcidLenOff := 5
+	dcidOff := dcidLenOff + 1
+	scidLenOff := dcidOff + quicCIDLen
+	scidOff := scidLenOff + 1
+
+	if pkt[dcidLenOff] != quicCIDLen {
+		t.Fatalf("DCID len = %d, want %d", pkt[dcidLenOff], quicCIDLen)
 	}
-	if !bytes.Equal(pkt[6:14], dcid) {
-		t.Fatalf("DCID at offset 6 = %x, want %x", pkt[6:14], dcid)
+	if !bytes.Equal(pkt[dcidOff:dcidOff+quicCIDLen], dcid) {
+		t.Fatalf("DCID at offset %d = %x, want %x", dcidOff, pkt[dcidOff:dcidOff+quicCIDLen], dcid)
 	}
-	if pkt[14] != 8 {
-		t.Fatalf("SCID len = %d, want 8", pkt[14])
+	if pkt[scidLenOff] != quicCIDLen {
+		t.Fatalf("SCID len = %d, want %d", pkt[scidLenOff], quicCIDLen)
 	}
-	if !bytes.Equal(pkt[15:23], scid) {
-		t.Fatalf("SCID at offset 15 = %x, want %x", pkt[15:23], scid)
+	if !bytes.Equal(pkt[scidOff:scidOff+quicCIDLen], scid) {
+		t.Fatalf("SCID at offset %d = %x, want %x", scidOff, pkt[scidOff:scidOff+quicCIDLen], scid)
 	}
 }
 
@@ -109,5 +121,96 @@ func TestValidateVNResponseTruncatedDCID(t *testing.T) {
 	pkt := []byte{0xc0, 0x00, 0x00, 0x00, 0x00, 0x04, 0xaa}
 	if err := validateVNResponse(pkt, nil); err == nil {
 		t.Fatal("expected error for truncated DCID")
+	}
+}
+
+type fakeUDPConn struct {
+	mu          sync.Mutex
+	written     []byte
+	onRead      func(written []byte) ([]byte, error)
+	readBlock   chan struct{}
+	deadline    time.Time
+	closeCalled atomic.Bool
+}
+
+func (f *fakeUDPConn) Write(b []byte) (int, error) {
+	f.mu.Lock()
+	f.written = append(f.written, b...)
+	f.mu.Unlock()
+	return len(b), nil
+}
+
+func (f *fakeUDPConn) Read(b []byte) (int, error) {
+	if f.readBlock != nil {
+		<-f.readBlock
+		return 0, errors.New("fake conn closed")
+	}
+	f.mu.Lock()
+	written := append([]byte(nil), f.written...)
+	f.mu.Unlock()
+	data, err := f.onRead(written)
+	if err != nil {
+		return 0, err
+	}
+	n := copy(b, data)
+	return n, nil
+}
+
+func (f *fakeUDPConn) SetDeadline(t time.Time) error {
+	f.deadline = t
+	return nil
+}
+
+func (f *fakeUDPConn) Close() error {
+	if f.closeCalled.CompareAndSwap(false, true) {
+		if f.readBlock != nil {
+			close(f.readBlock)
+		}
+	}
+	return nil
+}
+
+type fakeUDPDialer struct {
+	conn *fakeUDPConn
+}
+
+func (d *fakeUDPDialer) DialUDP(_ string, _, _ *net.UDPAddr) (udpConn, error) {
+	return d.conn, nil
+}
+
+// echoVN extracts the SCID from a written VN-trigger packet and produces
+// a valid VN response that echoes it back as the response's DCID.
+func echoVN(written []byte) ([]byte, error) {
+	if len(written) < 23 {
+		return nil, errors.New("written packet too short to extract SCID")
+	}
+	dcidLen := int(written[5])
+	scidLenOff := 6 + dcidLen
+	scidLen := int(written[scidLenOff])
+	scid := written[scidLenOff+1 : scidLenOff+1+scidLen]
+
+	serverSCID := bytes.Repeat([]byte{0xee}, 8)
+	resp := []byte{0xc0, 0x00, 0x00, 0x00, 0x00}
+	resp = append(resp, byte(len(scid)))
+	resp = append(resp, scid...)
+	resp = append(resp, byte(len(serverSCID)))
+	resp = append(resp, serverSCID...)
+	return resp, nil
+}
+
+func TestProbeQUICSuccess(t *testing.T) {
+	fc := &fakeUDPConn{onRead: echoVN}
+	dialer := &fakeUDPDialer{conn: fc}
+	addr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 4430}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	rtt, err := probeQUIC(ctx, dialer, addr)
+	if err != nil {
+		t.Fatalf("expected success, got %v", err)
+	}
+	if rtt <= 0 {
+		t.Fatalf("expected rtt > 0, got %v", rtt)
 	}
 }

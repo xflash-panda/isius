@@ -2,8 +2,12 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
+	"net"
+	"time"
 )
 
 const (
@@ -55,4 +59,94 @@ func validateVNResponse(packet, sentSCID []byte) error {
 		return errors.New("invalid VN response: DCID does not match sent SCID")
 	}
 	return nil
+}
+
+// udpDialer abstracts UDP dialing so probeQUIC can be tested with a
+// fake connection. The production implementation is realUDPDialer.
+type udpDialer interface {
+	DialUDP(network string, laddr, raddr *net.UDPAddr) (udpConn, error)
+}
+
+// udpConn is the minimal interface probeQUIC needs from a UDP socket.
+// *net.UDPConn satisfies it implicitly.
+type udpConn interface {
+	Write(b []byte) (int, error)
+	Read(b []byte) (int, error)
+	SetDeadline(t time.Time) error
+	Close() error
+}
+
+type realUDPDialer struct{}
+
+func (realUDPDialer) DialUDP(network string, laddr, raddr *net.UDPAddr) (udpConn, error) {
+	return net.DialUDP(network, laddr, raddr)
+}
+
+// Compile-time assertion: realUDPDialer must satisfy udpDialer.
+var _ udpDialer = realUDPDialer{}
+
+// probeQUIC sends a VN-trigger packet to addr and waits for a valid
+// Version Negotiation response. Returns the round-trip time on success.
+// The probe deadline is taken from ctx.Deadline() if set; ctx cancellation
+// causes probeQUIC to close the conn and return promptly without leaving
+// a goroutine that touches the conn after return.
+func probeQUIC(ctx context.Context, dialer udpDialer, addr *net.UDPAddr) (time.Duration, error) {
+	network := "udp4"
+	if addr.IP.To4() == nil {
+		network = "udp6"
+	}
+	conn, err := dialer.DialUDP(network, nil, addr)
+	if err != nil {
+		return 0, fmt.Errorf("udp dial: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	dcid := make([]byte, quicCIDLen)
+	scid := make([]byte, quicCIDLen)
+	if _, err := rand.Read(dcid); err != nil {
+		return 0, err
+	}
+	if _, err := rand.Read(scid); err != nil {
+		return 0, err
+	}
+	pkt := buildVNTriggerPacket(dcid, scid)
+
+	if d, ok := ctx.Deadline(); ok {
+		if err := conn.SetDeadline(d); err != nil {
+			return 0, err
+		}
+	}
+
+	start := time.Now()
+	if _, err := conn.Write(pkt); err != nil {
+		return 0, fmt.Errorf("udp write: %w", err)
+	}
+
+	type readResult struct {
+		buf []byte
+		n   int
+		err error
+	}
+	resultCh := make(chan readResult, 1)
+	go func() {
+		buf := make([]byte, 1500)
+		n, err := conn.Read(buf)
+		resultCh <- readResult{buf: buf, n: n, err: err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		_ = conn.Close()
+		<-resultCh
+		return 0, ctx.Err()
+	case r := <-resultCh:
+		if r.err != nil {
+			return 0, fmt.Errorf("udp read: %w", r.err)
+		}
+		rtt := time.Since(start)
+		if err := validateVNResponse(r.buf[:r.n], scid); err != nil {
+			return 0, err
+		}
+		return rtt, nil
+	}
 }
