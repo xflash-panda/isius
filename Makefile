@@ -17,6 +17,10 @@ check:
 fmt:
 	go fmt ./...
 
+lint:
+	go vet ./...
+	golangci-lint run ./...
+
 tag:
 	git tag v${VERSION}
 	git push origin v${VERSION}

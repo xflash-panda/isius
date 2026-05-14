@@ -20,11 +20,12 @@ type AccessLog struct {
 }
 
 func logWriter(logDir string, logRotate uint, logRotateTime time.Duration) (io.Writer, error) {
-	if logDir == "stdout" {
+	switch logDir {
+	case "stdout":
 		return os.Stdout, nil
-	} else if logDir == "" {
+	case "":
 		return os.Stderr, nil
-	} else if logDir == "none" {
+	case "none":
 		return nil, nil
 	}
 	logFile := logDir

@@ -67,7 +67,7 @@ func handleCheckPing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var pinger *ping.Pinger
-	if strings.Index(ip.String(), ":") != -1 {
+	if strings.Contains(ip.String(), ":") {
 		pinger, err = ping.New("", "::")
 		if err != nil {
 			outJSON(w, CRITICAL, "", fmt.Errorf("could not create pinger: %v", err))

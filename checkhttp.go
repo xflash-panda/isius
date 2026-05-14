@@ -140,8 +140,8 @@ func makeHTTPCheckHandler(defaultUA string) func(w http.ResponseWriter, r *http.
 			return
 		}
 
-		defer res.Body.Close()
-		_, err = io.Copy(io.Discard, res.Body)
+		defer func() { _ = res.Body.Close() }()
+		_, _ = io.Copy(io.Discard, res.Body)
 		if res.StatusCode != expectedStatus {
 			outJSON(w, CRITICAL, fmt.Sprintf("duration:%f", duration.Seconds()), fmt.Errorf("status code %d not match %d", res.StatusCode, expectedStatus))
 			return

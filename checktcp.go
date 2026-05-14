@@ -50,7 +50,7 @@ func handleCheckTCP(w http.ResponseWriter, r *http.Request) {
 	dialer := net.Dialer{
 		Timeout: monTimeout,
 	}
-	if strings.Index(ip.String(), ":") != -1 {
+	if strings.Contains(ip.String(), ":") {
 		network = "tcp6"
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), mainTimeout)
@@ -63,6 +63,6 @@ func handleCheckTCP(w http.ResponseWriter, r *http.Request) {
 		outJSON(w, CRITICAL, fmt.Sprintf("duration:%f", duration.Seconds()), err)
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	outJSON(w, OK, fmt.Sprintf("duration:%f", duration.Seconds()))
 }

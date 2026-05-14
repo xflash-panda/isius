@@ -84,8 +84,8 @@ func outJSON(w http.ResponseWriter, code int, msg string, errors ...error) {
 	if code > 0 {
 		w.WriteHeader(500)
 	}
-	w.Write(json)
-	w.Write([]byte("\n"))
+	_, _ = w.Write(json)
+	_, _ = w.Write([]byte("\n"))
 }
 
 func userErrorJSON(w http.ResponseWriter, e error) {
@@ -105,12 +105,12 @@ func userErrorJSON(w http.ResponseWriter, e error) {
 		return
 	}
 	w.WriteHeader(http.StatusBadRequest)
-	w.Write(json)
-	w.Write([]byte("\n"))
+	_, _ = w.Write(json)
+	_, _ = w.Write([]byte("\n"))
 }
 
 func handleHello(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("OK\n"))
+	_, _ = w.Write([]byte("OK\n"))
 }
 
 func printVersion() {
