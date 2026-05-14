@@ -1,5 +1,11 @@
 package main
 
+import (
+	"bytes"
+	"errors"
+	"fmt"
+)
+
 const (
 	quicTriggerPacketSize = 1200
 	quicCIDLen            = 8
@@ -22,4 +28,31 @@ func buildVNTriggerPacket(dcid, scid []byte) []byte {
 	pkt[off] = byte(len(scid))
 	copy(pkt[off+1:off+1+len(scid)], scid)
 	return pkt
+}
+
+// validateVNResponse checks that packet is a syntactically valid Version
+// Negotiation response per RFC 9000 §17.2.1, and that its DCID echoes the
+// SCID we sent. The DCID echo is what filters out stray UDP packets and
+// ICMP errors that happen to arrive on this socket.
+func validateVNResponse(packet, sentSCID []byte) error {
+	if len(packet) < 7 {
+		return fmt.Errorf("invalid VN response: too short (%d bytes)", len(packet))
+	}
+	if packet[0]&0x80 == 0 {
+		return errors.New("invalid VN response: not a long-header packet")
+	}
+	for i := 1; i <= 4; i++ {
+		if packet[i] != 0 {
+			return errors.New("invalid VN response: version field is not zero")
+		}
+	}
+	dcidLen := int(packet[5])
+	if len(packet) < 6+dcidLen {
+		return errors.New("invalid VN response: truncated DCID")
+	}
+	dcid := packet[6 : 6+dcidLen]
+	if !bytes.Equal(dcid, sentSCID) {
+		return errors.New("invalid VN response: DCID does not match sent SCID")
+	}
+	return nil
 }
