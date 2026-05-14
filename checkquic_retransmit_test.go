@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -115,5 +116,30 @@ func TestProbeQUICEachAttemptUsesFreshSocket(t *testing.T) {
 	}
 	if dialer.calls() != 3 {
 		t.Fatalf("expected 3 dial calls, got %d", dialer.calls())
+	}
+}
+
+func TestProbeQUICContextAlreadyCancelledBeforeFirstAttempt(t *testing.T) {
+	dialer := &multiAttemptFakeDialer{conns: []*fakeUDPConn{
+		newGarbageConn(), newGarbageConn(), newGarbageConn(),
+	}}
+	addr := &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 4430}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result := probeQUIC(ctx, dialer, addr)
+
+	if dialer.calls() != 0 {
+		t.Fatalf("expected 0 dial calls with pre-cancelled ctx, got %d", dialer.calls())
+	}
+	if result.attempts != 1 {
+		t.Fatalf("expected attempts=1, got %d", result.attempts)
+	}
+	if len(result.errs) != 1 {
+		t.Fatalf("expected 1 error, got %d", len(result.errs))
+	}
+	if !errors.Is(result.errs[0], context.Canceled) {
+		t.Fatalf("expected Canceled, got %v", result.errs[0])
 	}
 }
