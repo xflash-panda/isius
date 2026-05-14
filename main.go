@@ -30,6 +30,7 @@ const pingTimeout = 1 * time.Second
 const pingInterval = 10 * time.Millisecond
 const monTimeout = 300 * time.Second
 const quicTimeout = 3 * time.Second
+const quicProbeAttempts = 3
 
 var version string
 

@@ -103,11 +103,24 @@ type quicProbeResult struct {
 // up to quicProbeAttempts VN-trigger attempts and short-circuits on the
 // first valid Version Negotiation response.
 func probeQUIC(ctx context.Context, dialer udpDialer, addr *net.UDPAddr) quicProbeResult {
-	rtt, err := probeQUICAttempt(ctx, dialer, addr)
-	if err != nil {
-		return quicProbeResult{successes: 0, attempts: 1, errs: []error{err}}
+	var result quicProbeResult
+	for attempt := 1; attempt <= quicProbeAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			result.attempts = attempt
+			result.errs = append(result.errs, err)
+			return result
+		}
+		rtt, err := probeQUICAttempt(ctx, dialer, addr)
+		if err == nil {
+			result.successes = 1
+			result.attempts = attempt
+			result.rtt = rtt
+			return result
+		}
+		result.errs = append(result.errs, err)
 	}
-	return quicProbeResult{successes: 1, attempts: 1, rtt: rtt}
+	result.attempts = quicProbeAttempts
+	return result
 }
 
 // probeQUICAttempt performs exactly one VN-trigger send/recv cycle.
